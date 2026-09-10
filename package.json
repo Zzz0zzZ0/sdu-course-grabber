@@ -1,0 +1,10 @@
+{
+  "name": "sdu-add-course",
+  "version": "1.0.0",
+  "description": "山东大学选课辅助脚本",
+  "main": "index.js",
+  "author": "Grapedge, cxk1993 (适配)",
+  "license": "GPL-3.0",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test test/*.test.js", "start": "node index.js" }
+}

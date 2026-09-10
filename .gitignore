@@ -1,0 +1,16 @@
+node_modules
+build
+npm-debug.log
+.DS_Store
+
+# 本地私有配置（含学号/密码/设备指纹，绝不提交！）
+config.local.js
+session.local.json
+run.local.lock
+*.local.txt
+
+# Local evidence and secrets
+local-evidence/
+*.log
+.env
+.env.*
