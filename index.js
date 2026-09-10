@@ -1,40 +1,38 @@
-/**
- * @author 汐瑶 (适配自 Grapedge/SDU-AddCourse)
- * @description 山东大学选课/抢课辅助脚本（适配新版统一认证）
- *
- * ⚠️ 使用前必读：
- *   1. 本脚本当前已验证「登录链路」完整可用（2026-09-01 实测通过）
- *   2. 选课接口（查容量/提交选课）需要在实际选课季才能验证——智慧教学平台
- *      在非选课季对 ticket 兑换返回 500，属平台侧限制，非脚本问题
- *   3. 首次使用请先执行：cp config.local.example.js config.local.js
- *      并填入学号/密码（config.local.js 已被 .gitignore 排除，不会提交）
- *
- * 配置方法：
- *   username: 学号（在 config.local.js 中配置）
- *   password: 统一认证密码（在 config.local.js 中配置）
- *   course: [{ kch: 课程号, kxh: 课序号 }, ...]
- */
-const app = require('./src/app');
-const auth = require('./src/auth');
-const local = require('./config.local.js');
+const fs = require('node:fs');
+const path = require('node:path');
+const { parseSessionHeaders, saveSession, loadSession, createRequest } = require('./src/auth');
+const { createClient } = require('./src/courses');
+const { run, acquireLock } = require('./src/app');
 
-const config = {
-  username: local.username,
-  password: local.password,
-  course: [
-    // { kch: '课程号', kxh: '课序号' }
-    // 示例：{ kch: 'sd00130080', kxh: '0' }
-  ]
-};
-
-// 导出登录模块供调试
-module.exports = { config, auth };
-
-// 如果配置了课程才自动开抢；否则只提示配置
-if (config.course.length === 0) {
-  console.log('【提示】course 列表为空，未启动抢课。');
-  console.log('【提示】请先在 index.js 的 config.course 中填入要抢的课程号(kch)和课序号(kxh)');
-  console.log('【提示】登录测试：node test-login.js');
-} else {
-  app(config);
+async function main(args = process.argv.slice(2)) {
+  const command = args[0] || '--query';
+  if (args.length > 1 || !['--help', '--import-session', '--check-session', '--query', '--watch', '--run'].includes(command)) throw new Error('参数错误。使用 node index.js --help 查看用法。');
+  if (command === '--help') {
+    console.log('默认只查询，不提交选课。\n  node index.js                  查询目标课程\n  node index.js --watch          持续查询，不提交\n  node index.js --run            有余量时自动提交配置的课程\n  node test-login.js             仅检查会话与选课轮次\n  pbpaste | node index.js --import-session  导入浏览器 Copy request headers\nCtrl+C 停止。课程、轮次、间隔配置在 config.local.js。');
+    return;
+  }
+  if (command === '--import-session') {
+    saveSession(parseSessionHeaders(fs.readFileSync(0, 'utf8')));
+    console.log('会话已保存至 session.local.json（仅当前用户可读，已排除 Git）。'); return;
+  }
+  const configFile = path.join(__dirname, 'config.local.js');
+  if (!fs.existsSync(configFile)) throw new Error('请先复制 config.local.example.js 为 config.local.js 并配置课程。');
+  const config = require(configFile), controller = new AbortController();
+  const client = createClient(createRequest(loadSession(), { signal: controller.signal }));
+  const release = acquireLock();
+  const stop = () => controller.abort();
+  process.once('SIGINT', stop); process.once('SIGTERM', stop);
+  try {
+    if (command === '--check-session') {
+      const round = await client.prepare(config.roundId, ['xxxk']);
+      console.log(`登录会话有效：${round.name}。未执行选课提交。`);
+    } else await run(config, client, { mode: command.slice(2), signal: controller.signal });
+  } catch (e) {
+    if (e.name !== 'AbortError') throw e;
+    console.log('已停止。');
+  } finally {
+    process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); release();
+  }
 }
+if (require.main === module) main().catch(e => { console.error(e.message); process.exitCode = 1; });
+module.exports = { main };

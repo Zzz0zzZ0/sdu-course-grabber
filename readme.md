@@ -1,117 +1,89 @@
-# 去抢课吧 —— 山东大学选课/抢课辅助脚本（新版适配）
+# 山东大学选课辅助脚本：智慧教学平台适配
 
-> 适配自 [Grapedge/SDU-AddCourse](https://github.com/Grapedge/SDU-AddCourse)，GPL-3.0 许可。
-> 新版统一认证适配：汐瑶（2026-09-01），登录链路实测通过。
+适配 `https://bkzhjx.wh.sdu.edu.cn/jsxsd/`，支持限选和任选课程。Node.js 22 及以上，无第三方运行依赖。本次更新基于仓库 `2bb3808` 版本，适配当前智慧教学平台选课接口。原项目作者 Grapedge，仓库维护 cxk1993，原适配代码署名汐瑶；保留 GPL-3.0 许可。
 
-## 作者
+## 2026-09-10 平台适配
 
-- **仓库维护：** [cxk1993](https://github.com/cxk1993)
-- **新版适配：** 汐瑶（Hermes Agent）
-- **原版作者：** [Grapedge](https://github.com/Grapedge)（Grapedge/SDU-AddCourse）
+旧版 `bkjwxk.sdu.edu.cn/b/xk/xs/…` 已替换为从当前官方页面确认的接口。旧密码／设备指纹登录代码不再使用；改为在官方浏览器页面登录、进入选课轮次，然后导入本机会话。短信、验证码和设备绑定由官方页面完成。
 
-## 背景：老脚本为什么失效
+| 分类 | 查询 POST | 提交 GET | 状态 |
+| --- | --- | --- | --- |
+| 限选 `xxxk` | `/jsxsd/xsxkkc/xsxkXxxk` | `/jsxsd/xsxkkc/xxxkOper` | 查询、真实提交与已选结果核对已实测 |
+| 任选 `ggxxk` | `/jsxsd/xsxkkc/xsxkGgxxkxk` | `/jsxsd/xsxkkc/ggxxkxkOper` | 浏览器查询、真实提交与已选结果核对已实测 |
 
-山大在多年前更换了统一身份认证：
-- ~~`passt.sdu.edu.cn`~~ → 已废弃（脚本原版用的就是这个，所以直接卡死）
-- ~~`bkjwxk.sdu.edu.cn`~~ → 已废弃（原版抢课接口也在这，没了）
-- ✅ 现役：`pass.sdu.edu.cn`（新统一认证，https）+ `bkzhjx.wh.sdu.edu.cn`（智慧教学平台）
+提交接口虽然使用 GET，但会改变选课记录。程序仅在 `--run` 模式调用它，不通过访问提交 URL 来测试连接。
 
-## 新版登录流程（已破解并适配）
-
-新认证在提交登录表单前多了一道「设备校验」（`/cas/device`）：
-
-1. `GET /cas/login` 拿 `lt`/`execution` + cookie
-2. `POST /cas/device` 带设备指纹 + DES 加密账号密码
-   - `binded` / `pass` → 放行（本机已验证，免短信）
-   - `bind` → 需短信验证码绑定设备（换新机器/新指纹时才出现）
-   - `validErr` / `notFound` → 账号密码错误
-3. 通过后提交登录表单（`rsa`/`ul`/`pl`/`lt`/`execution`/`_eventId`）→ 拿 ticket
-4. 跟随跳转进入智慧教学平台
-
-加密算法 `des.js` 新旧一致（`strEnc(data,'1','2','3')`），无需改动。
-
-## 使用方法
-
-### 1. 安装依赖
+## 安装和配置
 
 ```bash
-npm install --registry=https://registry.npmjs.org
-```
-
-> ⚠️ 原项目的 package-lock.json 锁死了已停用的淘宝镜像（证书过期），
-> 已删除改用官方源，如遇安装问题先删 package-lock.json 再装。
-
-### 2. 配置账号（关键）
-
-复制配置模板，填入自己的学号和密码：
-
-```bash
+git clone https://github.com/cxk1993/sdu-course-grabber.git
+cd sdu-course-grabber
+node --version  # 需要 >= 22
+npm ci
 cp config.local.example.js config.local.js
 ```
 
-编辑 `config.local.js`（此文件已被 .gitignore 排除，不会泄露）：
+在 Chrome 打开 [官方平台](https://bkzhjx.wh.sdu.edu.cn/)，自行登录，点击“进入选课”，进入实际轮次及目标课程分类。
+
+编辑 `config.local.js`：
 
 ```js
 module.exports = {
-  username: '你的学号',
-  password: '你的密码',
-  fingerprint: { ... }  // 首次运行自动绑定，无需手动填写
-};
-```
-
-### 3. 测试登录（不抢课）
-
-```bash
-node test-login.js
-```
-
-- **首次使用**：会提示输入手机短信验证码完成设备绑定（一次性），之后免短信
-- 登录成功会显示平台页面标题和 HTTP 状态
-
-### 4. 配置要抢的课，开始抢课
-
-编辑 `index.js` 中的 `course` 列表：
-
-```js
-const config = {
-  username: local.username,  // 来自 config.local.js，无需改
-  password: local.password,  // 来自 config.local.js，无需改
+  roundId: '浏览器选课地址中 jx0502zbid 的值',
+  intervalMs: 10000,
   course: [
-    { kch: '课程号', kxh: '课序号' },
-    // 示例：{ kch: 'sd00130080', kxh: '0' }
+    { category: 'xxxk', kch: '课程编号', kxh: '课序号', name: '正式课程名称' }
   ]
 };
 ```
 
-然后运行：
+课程号和课序号必须精确匹配；多班或未匹配时停止，不自动选另一个班。`name` 可省略，填写后会额外核对名称。其它课程分类暂未适配，会明确报错。每轮结束后等待默认 10 秒（配置最少 5 秒），同一进程内每次请求之间另等待 5 秒，避免轮内请求集中触发频率限制；每个课程查询会按官方分页格式获取完整结果。完整首次查询通常需要约 35–40 秒。
+
+## 导入浏览器会话
+
+1. 在已登录的课程页面打开开发者工具 → Network。
+2. 点击网页“查询”，找到 `xsxkXxxk`（限选）或 `xsxkGgxxkxk`（任选）请求。
+3. 右键该请求 → Copy → **Copy request headers**。
+4. 在本项目目录执行：
 
 ```bash
+pbpaste | node index.js --import-session
+node test-login.js
+```
+
+macOS 的 `pbpaste` 从剪贴板读取请求头。其它系统可将请求头保存为本地文件后执行 `node index.js --import-session < request-headers.local.txt`。不支持把 cURL 命令或单独的 Cookie 当作完整请求头导入。
+
+会话保存到 `session.local.json`，文件权限为 600，并被 `.gitignore` 排除。请求头和会话包含登录凭据，仅留在本机，勿贴到聊天、提交到仓库或上传知识库。无需把账号密码写入配置。会话失效会停止；先在浏览器重新进入平台及选课轮次，通常可复用单点登录，必要时才重新登录，然后重新导入最新请求头。出现访问频繁提示时立即停止，不自动重试或重新登录。浏览器页面未刷新不代表会话仍有效。
+
+## 运行
+
+```bash
+node index.js           # 默认：只查询一次
+node index.js --watch   # 持续查询，不提交
+node index.js --run     # 有余量时提交已配置课程
+node test-login.js      # 仅验证会话与轮次，不启动选课
+```
+
+`Ctrl+C` 停止。程序不会开机自启、后台驻留或定时唤醒。同一项目目录只能运行一个实例；运行锁会阻止重复进程。异常退出的锁可在旧进程不存在时自动清理。
+
+程序根据官网读取当前轮次的开放日期和每天开放时段，到期停止。提交前再次查询余量、教学班标识和已选记录；已选课程不会重复提交。验证码、抽签／积分、分组班级、跨校区或时间冲突需在官网处理。收到成功响应后还会核对“选课结果”；超时、异常响应、失败或无法确认结果时停止，不盲目重复提交。教材选择等后续事项仍在官网完成。
+
+个人课程配置不纳入版本库。
+
+## 验证与边界
+
+```bash
+npm test
+node test-login.js
 node index.js
 ```
 
-## 现状与限制（重要）
+17 项 Node 内置测试覆盖：会话来源与文件权限、凭据跨域保护、JSON 会话失效、取消、分页、课序号精确匹配、默认只读、提交参数、成功核对、防重复、验证码／冲突保护、提交不确定性、轮询、截止时间、运行锁、逐请求间隔、GBK 频率限制提示及等待后截止复核。
 
-| 环节 | 状态 | 说明 |
-|---|---|---|
-| 统一认证登录 | ✅ 已验证 | 2026-09-01 用真实账号实测通过 |
-| 设备绑定 | ✅ 已绑定 | 本机指纹已信任，无需短信 |
-| ticket 兑换平台 | ✅ 已验证 | HTTP 200，拿到平台页面 |
-| **选课接口** | ⏳ 待选课季验证 | 非选课季平台对 ticket 返回 500，属平台侧限制 |
+已通过完整 CLI 查询、持续轮询、正常停止与运行锁清理，并与浏览器交叉核对。限选课程已实际完成提交，并在已选结果中确认成功；任选提交仅按官方源码适配并离线验证。平台规则和账号权限可能变化，已验证场景不代表所有课程均适用。回归测试全部使用模拟平台，不会调用真实选课接口。
 
-**选课接口（查容量/提交选课）需要在实际选课季才能验证**，届时：
-1. 登录成功后观察平台前端实际调用的接口（DevTools → Network）
-2. 对照老版 `src/app.js` 的 `kcsearch`/`add` 逻辑适配成新接口
-3. 老版查容量接口：`POST /b/xk/xs/kcsearch`（已废弃，仅参考）
+源码结构：`src/auth.js` 管理本机会话及固定域名 HTTP 请求；`src/courses.js` 对接轮次、查询和选课结果；`src/app.js` 管理串行轮询和停止；`index.js` 是显式命令入口。旧的 DES、Cookie 拼接和第三方 HTTP 依赖已移除。
 
-## 安全说明
+每份项目目录使用一套账号会话和课程配置。不同账号需使用独立目录和独立浏览器个人资料，分别导入会话；双账号并行尚未实测。
 
-- 脚本全程本地运行，密码只发往山大官方认证平台（`pass.sdu.edu.cn`）
-- 无第三方服务器、无埋点、无数据外传
-- 设备指纹为绑定时的固定值，请勿修改（改了会触发重新绑定）
-- ⚠️ 抢课脚本属于灰色地带，学校理论上禁止自动抢课，请自行斟酌使用
-
-## 红线
-
-- 未授权不碰选课接口（`test-login.js` 只测登录）
-- 不提交任何与教学无关的操作
-- 本工具仅用于个人选课便利，不用于商业用途
+个人课程配置、登录会话、运行日志和浏览器请求头均不纳入版本库。
