@@ -42,6 +42,11 @@ function parsePage(text) {
 }
 function matchCourse(rows, target) {
   const found = rows.filter(r => clean(r.kch) === target.kch && clean(r.kxhnew) === target.kxh);
+  if (!found.length) {
+    const error = new Error(`${target.kch}/${target.kxh} 暂未找到目标教学班（本次返回 ${rows.length} 条课程）。`);
+    error.code = 'COURSE_NOT_FOUND';
+    throw error;
+  }
   if (found.length !== 1) throw new Error(`${target.kch}/${target.kxh} 匹配到 ${found.length} 个教学班，请核对课程配置。`);
   const r = found[0];
   if (!r.jx0404id || !r.jx02id || !r.xqid || !/^\d+$/.test(clean(r.syrs))) throw new Error('教学班标识或余量字段不完整。');
