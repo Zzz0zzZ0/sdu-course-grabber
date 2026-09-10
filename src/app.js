@@ -36,12 +36,18 @@ function acquireLock(file = path.join(__dirname, '..', 'run.local.lock')) {
 async function run(config, client, { mode = 'query', signal, log = console.log, wait = sleep } = {}) {
   validateConfig(config);
   if (!['query', 'watch', 'run'].includes(mode)) throw new Error('未知运行模式。');
-  const round = await client.prepare(config.roundId, config.course.map(t => t.category));
+  let round = await client.prepare(config.roundId, config.course.map(t => t.category));
   log(`轮次：${round.name}；截止：${new Date(round.end).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}`);
   const pending = [...config.course];
+  let recover = false;
   do {
     if (signal?.aborted) return;
     if (mode !== 'query') assertOpen(round);
+    if (recover) {
+      round = await client.prepare(config.roundId, pending.map(t => t.category));
+      assertOpen(round);
+      recover = false;
+    }
     const enrolled = await client.enrolled();
     for (const target of [...pending]) {
       if (signal?.aborted) return;
@@ -49,20 +55,32 @@ async function run(config, client, { mode = 'query', signal, log = console.log, 
         log(`${target.name || target.kch} | ${target.kch}/${target.kxh} | 已选，无需重复提交`);
         pending.splice(pending.indexOf(target), 1); continue;
       }
-      const row = matchCourse(await client.query(target.category, target.kch), target);
-      if (signal?.aborted) return;
-      const already = enrolled.has(row.jx0404id);
-      log(`${row.kcmc} | ${target.kch}/${target.kxh} | 余量 ${row.syrs} | ${already ? '已选' : row.ctsm ? '冲突：' + row.ctsm : '未选'}`);
-      if (already) { pending.splice(pending.indexOf(target), 1); continue; }
-      if (mode === 'run' && row.syrs > 0) {
-        const result = await client.select(target, row.jx0404id);
-        log(`${row.kcmc}：${{ selected: '选课成功，已在选课结果中确认', already: '已选，无需重复提交', full: '余量已变化，继续等待' }[result.status]}`);
-        if (result.textbookRequired) log('请到官网完成教材选择。');
-        if (result.status !== 'full') pending.splice(pending.indexOf(target), 1);
+      try {
+        const row = matchCourse(await client.query(target.category, target.kch), target);
+        if (signal?.aborted) return;
+        const already = enrolled.has(row.jx0404id);
+        log(`${row.kcmc} | ${target.kch}/${target.kxh} | 余量 ${row.syrs} | ${already ? '已选' : row.ctsm ? '冲突：' + row.ctsm : '未选'}`);
+        if (already) { pending.splice(pending.indexOf(target), 1); continue; }
+        if (mode === 'run' && row.syrs > 0) {
+          const result = await client.select(target, row.jx0404id);
+          log(`${row.kcmc}：${{ selected: '选课成功，已在选课结果中确认', already: '已选，无需重复提交', full: '余量已变化，继续等待' }[result.status]}`);
+          if (result.textbookRequired) log('请到官网完成教材选择。');
+          if (result.status !== 'full') pending.splice(pending.indexOf(target), 1);
+        }
+      } catch (e) {
+        if (e.code !== 'COURSE_NOT_FOUND' || mode === 'query') throw e;
+        if (signal?.aborted) return;
+        if ((await client.enrolled()).has(target.kch + '/' + target.kxh)) {
+          log(`${new Date().toISOString()} | ${target.kch}/${target.kxh} | 已选，无需重复提交`);
+          pending.splice(pending.indexOf(target), 1);
+        } else {
+          log(`${new Date().toISOString()} | ${e.message} 等待至少 60 秒后重新进入轮次复查；请核对课程配置。`);
+          recover = true;
+        }
       }
     }
     if (mode === 'query' || !pending.length) return;
-    const delay = Math.min(config.intervalMs, round.end - Date.now());
+    const delay = Math.min(recover ? Math.max(60000, config.intervalMs) : config.intervalMs, round.end - Date.now());
     if (delay <= 0) throw new Error('选课轮次已结束。');
     await wait(delay, undefined, { signal });
   } while (true);

@@ -15,7 +15,7 @@ const roundHtml = '<span>选课名称：测试轮次</span><span>选课时间：
 const rulesHtml = '<input id="sfyzmxk" value="0"><script>var qycqxk = "0"; if(\'07\' != xqid) {} </script>/jsxsd/xsxkkc/xsxkXxxk';
 const response = rows => JSON.stringify({ aaData: rows, iTotalRecords: rows.length, iTotalDisplayRecords: rows.length, sEcho: '1' });
 const selectedHtml = selected => '<th>课程编号</th><th>选课状态</th>' + (selected ? '<tr><td>TEST100</td><td>测试课程</td><td></td><td>100</td><td><div id="div_CLASS1"></div></td></tr>' : '');
-function fakePlatform({ row = course, rules = rulesHtml, selected = false, submit = { success: true, message: '选课成功' }, confirm = true } = {}) {
+function fakePlatform({ row = course, rules = rulesHtml, selected = false, submit = { success: true, message: '选课成功' }, confirm = true, queryRows } = {}) {
   const calls = [];
   const request = async (route, options = {}) => {
     calls.push({ route, options });
@@ -24,7 +24,7 @@ function fakePlatform({ row = course, rules = rulesHtml, selected = false, submi
     if (route.includes('/newXsxkzx')) return '<iframe id="selectBottom">';
     if (route.includes('/selectNum')) return roundHtml;
     if (route.endsWith('/getXxxk')) return rules;
-    if (route.includes('/xsxkXxxk?')) return response([row]);
+    if (route.includes('/xsxkXxxk?')) return response(queryRows ? queryRows() : [row]);
     if (route.includes('/comeXkjglb')) return selectedHtml(selected);
     if (route.includes('/xxxkOper?')) {
       if (submit instanceof Error) throw submit;
@@ -74,7 +74,7 @@ test('new schema, exact course section and required capacity are checked', () =>
   assert.equal(matchCourse([course], target).syrs, 1);
   assert.throws(() => parsePage('{"object":{"resultList":[]}}'), /结构/);
   assert.throws(() => matchCourse([course, course], target), /2 个/);
-  assert.throws(() => matchCourse([{ ...course, kxhnew: '101' }], target), /0 个/);
+  assert.throws(() => matchCourse([{ ...course, kxhnew: '101' }], target), { code: 'COURSE_NOT_FOUND' });
   assert.throws(() => matchCourse([{ ...course, syrs: null }], target), /余量/);
   assert.deepEqual(parseRules(rulesHtml), { captcha: false, lottery: false, campus: '07' });
 });
@@ -202,4 +202,63 @@ test('deadline is checked after request spacing, before dispatch', async () => {
     if (expired) throw new Error('轮次已结束');
   } }), /轮次已结束/);
   assert.equal(calls, 1);
+});
+
+
+test('missing courses back off, re-enter the round and recover without duplicate submission', async () => {
+  for (const missingQuery of [1, 2]) {
+    let queries = 0;
+    const p = fakePlatform({ queryRows: () => ++queries === missingQuery ? [] : [course] });
+    const delays = [], logs = [];
+    await run(config, p.client, { mode: 'run', log: s => logs.push(s), wait: async ms => delays.push(ms) });
+    assert.deepEqual(delays, [60000]);
+    assert.equal(p.calls.filter(c => c.route.includes('/newXsxkzx')).length, 2);
+    assert.equal(writes(p).length, 1);
+    assert.ok(logs.some(s => s.includes('本次返回 0 条课程')));
+  }
+});
+
+test('missing course already enrolled elsewhere completes without retry or submission', async () => {
+  const p = fakePlatform({ queryRows: () => [] });
+  let reads = 0;
+  p.client.enrolled = async () => ++reads === 1 ? new Set() : new Set(['TEST100/100']);
+  await run(config, p.client, { mode: 'run', log() {}, wait: () => assert.fail('must not retry') });
+  assert.equal(reads, 2);
+  assert.equal(writes(p).length, 0);
+});
+
+test('single query, ambiguous match and uncertain submission remain fatal without retry', async () => {
+  for (const [mode, options, expected] of [
+    ['query', { queryRows: () => [] }, /暂未找到/],
+    ['run', { queryRows: () => [course, { ...course, jx0404id: 'CLASS2' }] }, /2 个/],
+    ['run', { submit: new Error('timeout') }, /提交结果不确定/]
+  ]) {
+    const p = fakePlatform(options);
+    await assert.rejects(run(config, p.client, { mode, log() {}, wait: () => assert.fail('must not retry') }), expected);
+    assert.equal(writes(p).length, options.submit ? 1 : 0);
+  }
+});
+
+test('missing course recovery honors cancellation and preserves watch-only behavior', async () => {
+  const controller = new AbortController(), p = fakePlatform({ queryRows: () => [] });
+  await run(config, p.client, { mode: 'watch', signal: controller.signal, log() {}, wait: async ms => {
+    assert.equal(ms, 60000); controller.abort();
+  } });
+  assert.equal(writes(p).length, 0);
+  assert.equal(p.calls.filter(c => c.route.includes('/newXsxkzx')).length, 1);
+});
+
+test('repeated missing results keep monitoring; recovery stops at the round deadline', async () => {
+  const realNow = Date.now;
+  let now = realNow(), queries = 0, prepares = 0;
+  const round = { ...parseRound(roundHtml), end: now + 90000 };
+  Date.now = () => now;
+  try {
+    const client = { prepare: async () => { prepares++; return round; }, enrolled: async () => new Set(),
+      query: async () => { queries++; return []; }, select: () => assert.fail('must not submit') };
+    const delays = [];
+    await assert.rejects(run(config, client, { mode: 'run', log() {}, wait: async ms => { delays.push(ms); now += ms; } }), /开放时间/);
+    assert.deepEqual(delays, [60000, 30000]);
+    assert.equal(queries, 2); assert.equal(prepares, 2);
+  } finally { Date.now = realNow; }
 });
