@@ -18,8 +18,8 @@
 ## 安装和配置
 
 ```bash
-git clone https://github.com/Zzz0zzZ0/SDU-course-helper.git
-cd SDU-course-helper
+git clone https://github.com/Zzz0zzZ0/sdu-course-grabber.git
+cd sdu-course-grabber
 node --version  # 需要 >= 22
 npm ci
 cp config.local.example.js config.local.js
