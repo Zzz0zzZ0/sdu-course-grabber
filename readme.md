@@ -1,6 +1,8 @@
-# 山东大学选课辅助脚本：智慧教学平台适配
+# SDU Course Helper
 
-适配 `https://bkzhjx.wh.sdu.edu.cn/jsxsd/`，支持限选和任选课程。Node.js 22 及以上，无第三方运行依赖。本次更新基于仓库 `2bb3808` 版本，适配当前智慧教学平台选课接口。原项目作者 Grapedge，仓库维护 cxk1993，原适配代码署名汐瑶；保留 GPL-3.0 许可。
+山东大学智慧教学平台选课辅助脚本。
+
+适配 `https://bkzhjx.wh.sdu.edu.cn/jsxsd/`，支持限选和任选课程。Node.js 22 及以上，无第三方运行依赖。基于 [cxk1993/sdu-course-grabber](https://github.com/cxk1993/sdu-course-grabber) 的 `2bb3808` 版本适配。原项目作者 Grapedge，仓库维护 cxk1993，原适配代码署名汐瑶；保留 GPL-3.0 许可。
 
 ## 2026-09-10 平台适配
 
@@ -9,15 +11,15 @@
 | 分类 | 查询 POST | 提交 GET | 状态 |
 | --- | --- | --- | --- |
 | 限选 `xxxk` | `/jsxsd/xsxkkc/xsxkXxxk` | `/jsxsd/xsxkkc/xxxkOper` | 查询、真实提交与已选结果核对已实测 |
-| 任选 `ggxxk` | `/jsxsd/xsxkkc/xsxkGgxxkxk` | `/jsxsd/xsxkkc/ggxxkxkOper` | 浏览器查询、真实提交与已选结果核对已实测 |
+| 任选 `ggxxk` | `/jsxsd/xsxkkc/xsxkGgxxkxk` | `/jsxsd/xsxkkc/ggxxkxkOper` | 浏览器查询已实测；提交按官方源码适配并离线验证 |
 
 提交接口虽然使用 GET，但会改变选课记录。程序仅在 `--run` 模式调用它，不通过访问提交 URL 来测试连接。
 
 ## 安装和配置
 
 ```bash
-git clone https://github.com/cxk1993/sdu-course-grabber.git
-cd sdu-course-grabber
+git clone https://github.com/Zzz0zzZ0/SDU-course-helper.git
+cd SDU-course-helper
 node --version  # 需要 >= 22
 npm ci
 cp config.local.example.js config.local.js
@@ -86,4 +88,4 @@ node index.js
 
 每份项目目录使用一套账号会话和课程配置。不同账号需使用独立目录和独立浏览器个人资料，分别导入会话；双账号并行尚未实测。
 
-个人课程配置、登录会话、运行日志和浏览器请求头均不纳入版本库。
+本仓库发布适配后的源码快照，不包含个人课程配置、登录会话、运行日志或浏览器请求头。
